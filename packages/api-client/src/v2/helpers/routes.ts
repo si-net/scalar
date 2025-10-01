@@ -1,4 +1,20 @@
+import type { WorkspaceStore } from '@scalar/workspace-store/client'
 import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router'
+
+/** Props which are injected into every top level route */
+export type RouteProps = {
+  /** The workspace store */
+  store: WorkspaceStore
+  /** Client options */
+  options: {
+    /**
+     * The layout of the client
+     *
+     * @default 'desktop'
+     */
+    layout: 'modal' | 'web' | 'desktop'
+  }
+}
 
 export enum PathId {
   Request = 'request',

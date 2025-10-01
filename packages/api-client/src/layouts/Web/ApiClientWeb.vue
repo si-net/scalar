@@ -61,6 +61,8 @@ watch(mediaQueries.xl, setSidebarOpen, {
   immediate: true,
 })
 
+console.log('ho')
+
 const themeStyleTag = computed(
   () =>
     activeWorkspace.value &&
@@ -74,13 +76,11 @@ const themeStyleTag = computed(
       <div v-html="themeStyleTag" />
 
       <!-- Ensure we have the workspace loaded from localStorage above -->
-      <MainLayout v-if="activeWorkspace?.uid">
-        <RouterView v-slot="{ Component }">
-          <keep-alive>
-            <component :is="Component" />
-          </keep-alive>
-        </RouterView>
-      </MainLayout>
+      <RouterView v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </RouterView>
 
       <ScalarToasts />
     </ImportCollectionListener>

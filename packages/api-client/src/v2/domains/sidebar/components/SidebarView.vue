@@ -11,12 +11,21 @@ import { RouterView } from 'vue-router'
 import SidebarToggle from '@/components/Sidebar/SidebarToggle.vue'
 import { useOpenApiWatcher } from '@/views/Request/hooks/useOpenApiWatcher'
 
+const props = defineProps<{
+  test: number
+}>()
+
 defineEmits<(e: 'newTab', item: { name: string; uid: string }) => void>()
+
+console.log(';asdhasdkjhasdj')
+console.log(props)
 
 useOpenApiWatcher()
 
 /** Tracks which folders are open  */
 const openSidebarFolders = reactive<Record<string, boolean>>({})
+
+/** Tracks if the sidebar is open */
 const isSidebarOpen = ref(false)
 // const isSidebarOpen = ref(false layout !== 'modal')
 
@@ -50,7 +59,7 @@ const isSidebarOpen = ref(false)
 
       <!-- Content -->
       <div class="flex h-full flex-1 flex-col">
-        <RouterView />
+        <!-- <RouterView /> -->
       </div>
     </div>
   </div>

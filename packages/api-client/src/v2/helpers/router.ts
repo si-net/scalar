@@ -1,7 +1,5 @@
 import { createMemoryHistory, createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 
-import { modalRoutes, routes } from '@/routes'
-
 /** Router for the API client app */
 export const createWebHistoryRouter = () =>
   createRouter({
@@ -11,12 +9,8 @@ export const createWebHistoryRouter = () =>
         name: 'sidebar-layout',
         path: '',
         component: () => import('@v2/domains/sidebar/components/SidebarView.vue'),
-        redirect: (to) => ({
-          name: 'request',
-          params: { ...to.params, request: 'default' },
-          props: { test: 123 },
-        }),
         children: [],
+        props: { test: 123 },
       },
     ],
   })
