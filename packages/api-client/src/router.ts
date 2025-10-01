@@ -1,5 +1,6 @@
-import { modalRoutes, routes } from '@/routes'
 import { createMemoryHistory, createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
+
+import { modalRoutes, routes } from '@/routes'
 
 export { PathId, saveActiveWorkspace } from '@/routes'
 
