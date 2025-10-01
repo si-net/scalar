@@ -61,6 +61,158 @@ function handleCurlImport(curl: string) {
     },
   })
 }
+
+const pluginManager = usePluginManager()
+
+const element = ref<HTMLDivElement>()
+
+const requestAbortController = ref<AbortController>()
+const invalidParams = ref<Set<string>>(new Set())
+const requestResult = ref<SendRequestResult | null>(null)
+
+/**
+ * Selected scheme UIDs
+ *
+ * In the modal we use collection.selectedSecuritySchemes and in the
+ * standalone client we use request.selectedSecuritySchemeUids
+ *
+ * These are centralized here so they can be drilled down AND used in send-request
+ */
+const selectedSecuritySchemeUids = computed(
+  () =>
+    (activeCollection.value?.useCollectionSecurity
+      ? activeCollection.value?.selectedSecuritySchemeUids
+      : activeRequest.value?.selectedSecuritySchemeUids) ?? [],
+)
+
+/**
+ * Execute the request
+ * called from the send button as well as keyboard shortcuts
+ */
+const executeRequest = async () => {
+  if (!activeRequest.value || !activeExample.value || !activeCollection.value) {
+    return
+  }
+
+  invalidParams.value = validateParameters(activeExample.value)
+
+  const environmentValue =
+    typeof activeEnvironment.value === 'object'
+      ? activeEnvironment.value.value
+      : '{}'
+  const e = safeJSON.parse(environmentValue)
+  if (e.error) {
+    console.error('INVALID ENVIRONMENT!')
+  }
+  const environment =
+    e.error || typeof e.data !== 'object' ? {} : (e.data ?? {})
+
+  const globalCookies =
+    activeWorkspace.value?.cookies.map((c) => cookies[c]).filter(isDefined) ??
+    []
+
+  const server =
+    activeCollection.value?.info?.title === 'Drafts'
+      ? undefined
+      : activeServer.value
+
+  const [error, requestOperation] = createRequestOperation({
+    request: activeRequest.value,
+    example: activeExample.value,
+    selectedSecuritySchemeUids: selectedSecuritySchemeUids.value,
+    proxyUrl: activeWorkspace.value?.proxyUrl ?? '',
+    environment,
+    globalCookies,
+    status: events.requestStatus,
+    securitySchemes: securitySchemes,
+    server,
+    pluginManager,
+  })
+
+  // Call the onRequestSent callback if it exists
+  config.value?.onRequestSent?.(activeRequest.value.path ?? '')
+
+  // Error from createRequestOperation
+  if (error) {
+    toast(error.message, 'error')
+    return
+  }
+
+  requestAbortController.value = requestOperation.controller
+  const [sendRequestError, result] = await requestOperation.sendRequest()
+
+  // Store the result to share it with child components
+  requestResult.value = result
+
+  // Send error toast
+  if (sendRequestError) {
+    toast(sendRequestError.message, 'error')
+  } else {
+    // We need to deep clone the result because it's a ref and updates will break the history
+    requestHistory.push(cloneRequestResult(result))
+  }
+}
+
+/** Cancel a live request */
+const cancelRequest = async () =>
+  requestAbortController.value?.abort(ERRORS.REQUEST_ABORTED)
+
+/** Subscribed to executeRequest, used for logging / analytics. */
+function logRequest() {
+  analytics?.capture('client-send-request')
+}
+
+onMounted(() => {
+  events.executeRequest.on(executeRequest)
+  events.executeRequest.on(logRequest)
+  events.cancelRequest.on(cancelRequest)
+})
+
+/**
+ * Need to manually remove listener on unmount due to vueuse memory leak
+ *
+ * @see https://github.com/vueuse/vueuse/issues/3498#issuecomment-2055546566
+ */
+onBeforeUnmount(() => {
+  events.executeRequest.off(executeRequest)
+  events.executeRequest.off(logRequest)
+})
+
+// Clear invalid params on parameter update
+watch(
+  () => activeExample.value?.parameters,
+  () => {
+    invalidParams.value.clear()
+  },
+  { deep: true },
+)
+
+const cloneRequestResult = (result: any) => {
+  // Create a structured clone that can handle Blobs, ArrayBuffers, etc.
+  try {
+    return structuredClone(result)
+  } catch (error) {
+    // Fallback to a custom cloning approach if structuredClone fails
+    // or isn't available in the environment
+    const clone = { ...result }
+
+    // Handle response data specifically
+    if (result.response?.data) {
+      // If it's a Blob/File/ArrayBuffer, store a reference
+      if (
+        result.response.data instanceof Blob ||
+        result.response.data instanceof ArrayBuffer
+      ) {
+        clone.response.data = result.response.data
+      } else {
+        // For regular objects, do a deep clone
+        clone.response.data = JSON.parse(JSON.stringify(result.response.data))
+      }
+    }
+
+    return clone
+  }
+}
 </script>
 
 <template>

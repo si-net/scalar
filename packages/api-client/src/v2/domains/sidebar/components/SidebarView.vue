@@ -1,202 +1,30 @@
 <script lang="ts">
 /**
- * Contains the layout with the sidebar + the operation router view
+ * Contains the layout with the sidebar for operation and collection pages
  */
 export default {}
 </script>
 <script setup lang="ts">
-import { isDefined } from '@scalar/oas-utils/helpers'
-import { safeJSON } from '@scalar/object-utils/parse'
-import { useToasts } from '@scalar/use-toasts'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { reactive, ref } from 'vue'
 import { RouterView } from 'vue-router'
 
 import SidebarToggle from '@/components/Sidebar/SidebarToggle.vue'
-import { useLayout } from '@/hooks'
-import { useAnalytics } from '@/hooks/useAnalytics'
-import { useClientConfig } from '@/hooks/useClientConfig'
-import { useSidebar } from '@/hooks/useSidebar'
-import { ERRORS } from '@/libs'
-import { createRequestOperation } from '@/libs/send-request'
-import type { SendRequestResult } from '@/libs/send-request/create-request-operation'
-import { validateParameters } from '@/libs/validate-parameters'
-import { usePluginManager } from '@/plugins'
-import { useWorkspace } from '@/store'
-import { useActiveEntities } from '@/store/active-entities'
 import { useOpenApiWatcher } from '@/views/Request/hooks/useOpenApiWatcher'
 
 defineEmits<(e: 'newTab', item: { name: string; uid: string }) => void>()
-const workspaceContext = useWorkspace()
-const { toast } = useToasts()
-const { layout } = useLayout()
-const config = useClientConfig()
-const { isSidebarOpen } = useSidebar()
-const analytics = useAnalytics()
-
-const {
-  activeCollection,
-  activeExample,
-  activeEnvironment,
-  activeRequest,
-  activeWorkspace,
-  activeServer,
-} = useActiveEntities()
-const { cookies, requestHistory, showSidebar, securitySchemes, events } =
-  workspaceContext
-
-const pluginManager = usePluginManager()
-
-const element = ref<HTMLDivElement>()
-
-const requestAbortController = ref<AbortController>()
-const invalidParams = ref<Set<string>>(new Set())
-const requestResult = ref<SendRequestResult | null>(null)
-
-/**
- * Selected scheme UIDs
- *
- * In the modal we use collection.selectedSecuritySchemes and in the
- * standalone client we use request.selectedSecuritySchemeUids
- *
- * These are centralized here so they can be drilled down AND used in send-request
- */
-const selectedSecuritySchemeUids = computed(
-  () =>
-    (activeCollection.value?.useCollectionSecurity
-      ? activeCollection.value?.selectedSecuritySchemeUids
-      : activeRequest.value?.selectedSecuritySchemeUids) ?? [],
-)
-
-/**
- * Execute the request
- * called from the send button as well as keyboard shortcuts
- */
-const executeRequest = async () => {
-  if (!activeRequest.value || !activeExample.value || !activeCollection.value) {
-    return
-  }
-
-  invalidParams.value = validateParameters(activeExample.value)
-
-  const environmentValue =
-    typeof activeEnvironment.value === 'object'
-      ? activeEnvironment.value.value
-      : '{}'
-  const e = safeJSON.parse(environmentValue)
-  if (e.error) {
-    console.error('INVALID ENVIRONMENT!')
-  }
-  const environment =
-    e.error || typeof e.data !== 'object' ? {} : (e.data ?? {})
-
-  const globalCookies =
-    activeWorkspace.value?.cookies.map((c) => cookies[c]).filter(isDefined) ??
-    []
-
-  const server =
-    activeCollection.value?.info?.title === 'Drafts'
-      ? undefined
-      : activeServer.value
-
-  const [error, requestOperation] = createRequestOperation({
-    request: activeRequest.value,
-    example: activeExample.value,
-    selectedSecuritySchemeUids: selectedSecuritySchemeUids.value,
-    proxyUrl: activeWorkspace.value?.proxyUrl ?? '',
-    environment,
-    globalCookies,
-    status: events.requestStatus,
-    securitySchemes: securitySchemes,
-    server,
-    pluginManager,
-  })
-
-  // Call the onRequestSent callback if it exists
-  config.value?.onRequestSent?.(activeRequest.value.path ?? '')
-
-  // Error from createRequestOperation
-  if (error) {
-    toast(error.message, 'error')
-    return
-  }
-
-  requestAbortController.value = requestOperation.controller
-  const [sendRequestError, result] = await requestOperation.sendRequest()
-
-  // Store the result to share it with child components
-  requestResult.value = result
-
-  // Send error toast
-  if (sendRequestError) {
-    toast(sendRequestError.message, 'error')
-  } else {
-    // We need to deep clone the result because it's a ref and updates will break the history
-    requestHistory.push(cloneRequestResult(result))
-  }
-}
-
-/** Cancel a live request */
-const cancelRequest = async () =>
-  requestAbortController.value?.abort(ERRORS.REQUEST_ABORTED)
-
-/** Subscribed to executeRequest, used for logging / analytics. */
-function logRequest() {
-  analytics?.capture('client-send-request')
-}
-
-onMounted(() => {
-  events.executeRequest.on(executeRequest)
-  events.executeRequest.on(logRequest)
-  events.cancelRequest.on(cancelRequest)
-})
 
 useOpenApiWatcher()
 
-/**
- * Need to manually remove listener on unmount due to vueuse memory leak
- *
- * @see https://github.com/vueuse/vueuse/issues/3498#issuecomment-2055546566
- */
-onBeforeUnmount(() => {
-  events.executeRequest.off(executeRequest)
-  events.executeRequest.off(logRequest)
-})
+/** Tracks which folders are open  */
+const openSidebarFolders = reactive<Record<string, boolean>>({})
+const isSidebarOpen = ref(false)
+// const isSidebarOpen = ref(false layout !== 'modal')
 
-// Clear invalid params on parameter update
-watch(
-  () => activeExample.value?.parameters,
-  () => {
-    invalidParams.value.clear()
-  },
-  { deep: true },
-)
-
-const cloneRequestResult = (result: any) => {
-  // Create a structured clone that can handle Blobs, ArrayBuffers, etc.
-  try {
-    return structuredClone(result)
-  } catch (error) {
-    // Fallback to a custom cloning approach if structuredClone fails
-    // or isn't available in the environment
-    const clone = { ...result }
-
-    // Handle response data specifically
-    if (result.response?.data) {
-      // If it's a Blob/File/ArrayBuffer, store a reference
-      if (
-        result.response.data instanceof Blob ||
-        result.response.data instanceof ArrayBuffer
-      ) {
-        clone.response.data = result.response.data
-      } else {
-        // For regular objects, do a deep clone
-        clone.response.data = JSON.parse(JSON.stringify(result.response.data))
-      }
-    }
-
-    return clone
-  }
-}
+/** Actions */
+// setCollapsedSidebarFolder,
+// toggleSidebarFolder,
+// setSidebarOpen,
+// toggleSidebarOpen,
 </script>
 
 <template>
@@ -218,16 +46,11 @@ const cloneRequestResult = (result: any) => {
       ]" />
     <div class="flex h-full">
       <!-- Sidebar -->
-      <RequestSidebar
-        v-if="showSidebar"
-        @newTab="$emit('newTab', $event)" />
+      <div class="sidebar-active-width">Insert sidebar block here</div>
 
       <!-- Content -->
       <div class="flex h-full flex-1 flex-col">
-        <RouterView
-          :invalidParams="invalidParams"
-          :requestResult="requestResult"
-          :selectedSecuritySchemeUids="selectedSecuritySchemeUids" />
+        <RouterView />
       </div>
     </div>
   </div>
