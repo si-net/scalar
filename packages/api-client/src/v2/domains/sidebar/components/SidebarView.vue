@@ -17,7 +17,6 @@ const props = defineProps<{
 
 defineEmits<(e: 'newTab', item: { name: string; uid: string }) => void>()
 
-console.log(';asdhasdkjhasdj')
 console.log(props)
 
 useOpenApiWatcher()
