@@ -19,6 +19,7 @@ export type {
   SpecificationExtension,
   ViewComponent,
 } from './api-reference-plugin'
+export type { AuthenticationConfiguration } from './authentication-configuration'
 export type { ApiReferenceInstance, CreateApiReference } from './html-api'
 export {
   type HtmlRenderingConfiguration,

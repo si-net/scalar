@@ -1,6 +1,9 @@
+import type { AuthenticationConfiguration } from '@scalar/types/api-reference'
+import type { WorkspaceStore } from '@scalar/workspace-store/client'
+import { getResolvedRef } from '@scalar/workspace-store/helpers/get-resolved-ref'
 import { renderToString } from '@vue/server-renderer'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { assert, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, h } from 'vue'
 
 import ApiReference from '@/components/ApiReference.vue'
@@ -310,5 +313,58 @@ describe('Rendering', () => {
     const html = await renderToString(app)
 
     expect(html).toContain('Test API')
+  })
+})
+
+describe('configuration', () => {
+  it.only('sets store authentication when provided', async () => {
+    const wrapper = mount(ApiReference, {
+      props: {
+        configuration: {
+          authentication: {
+            securitySchemes: {
+              apiKey: {
+                token: 'test-api-key-value',
+              },
+            },
+          } satisfies AuthenticationConfiguration,
+          content: {
+            openapi: '3.1.0',
+            info: {
+              title: 'Test API',
+              version: '1.0.0',
+            },
+            paths: {},
+            components: {
+              securitySchemes: {
+                apiKey: {
+                  type: 'apiKey',
+                  name: 'X-API-Key',
+                  in: 'header',
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    // Wait for the API reference to be rendered
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // Access the workspace store to verify authentication was applied
+    const workspaceStore = wrapper.vm.workspaceStore as WorkspaceStore
+
+    // Get the active document
+    const activeDocument = workspaceStore.workspace.activeDocument
+
+    // Verify the security scheme exists in the document
+    const securityScheme = getResolvedRef(activeDocument?.components?.securitySchemes?.apiKey)
+    assert(securityScheme?.type === 'apiKey')
+    console.log(securityScheme)
+    expect(securityScheme['x-scalar-secret-token']).toBe('test-api-key-value')
+
+    wrapper.unmount()
   })
 })

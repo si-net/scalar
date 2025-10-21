@@ -21,6 +21,11 @@
       import sources from './test/data/sources.ts'
 
       const app = Scalar.createApiReference('#app', {
+        authentication: {
+          bearerAuth: {
+            token: '1234567890',
+          },
+        },
         sources,
         persistAuth: true,
         // Avoid CORS issues
