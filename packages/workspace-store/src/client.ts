@@ -8,17 +8,14 @@ import { upgrade } from '@scalar/openapi-upgrader'
 import type { Record } from '@scalar/typebox'
 import { Value } from '@scalar/typebox/value'
 import type { PartialDeep, RequiredDeep } from 'type-fest'
-import { reactive, toRaw } from 'vue'
+import { toRaw } from 'vue'
 import YAML from 'yaml'
 
 import { applySelectiveUpdates } from '@/helpers/apply-selective-updates'
 import { deepClone } from '@/helpers/deep-clone'
-import { createDetectChangesProxy } from '@/helpers/detect-changes-proxy'
 import { type UnknownObject, isObject, safeAssign } from '@/helpers/general'
 import { getValueByPath } from '@/helpers/json-path-utils'
 import { mergeObjects } from '@/helpers/merge-object'
-import { createOverridesProxy, unpackOverridesProxy } from '@/helpers/overrides-proxy'
-import { unpackProxyObject } from '@/helpers/unpack-proxy'
 import { createNavigation } from '@/navigation'
 import { externalValueResolver, loadingStatus, refsEverywhere, restoreOriginalRefs } from '@/plugins/bundler'
 import { getServersFromDocument } from '@/preprocessing/server'
@@ -33,7 +30,7 @@ import {
 import type { Workspace, WorkspaceDocumentMeta, WorkspaceMeta } from '@/schemas/workspace'
 import type { WorkspaceSpecification } from '@/schemas/workspace-specification'
 import type { Config, DocumentConfiguration } from '@/schemas/workspace-specification/config'
-import type { WorkspacePlugin, WorkspaceStateChangeEvent } from '@/workspace-plugin'
+import type { WorkspacePlugin } from '@/workspace-plugin'
 
 type ExtraDocumentConfigurations = Record<
   string,
@@ -436,9 +433,6 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
    *
    * @param event - The workspace state change event to broadcast to plugins
    */
-  const fireWorkspaceChange = (event: WorkspaceStateChangeEvent) => {
-    workspaceProps?.plugins?.forEach((plugin) => plugin.hooks?.onWorkspaceStateChanges?.(event))
-  }
 
   /**
    * An object containing the reactive workspace state.
@@ -454,86 +448,20 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
    * are also triggered reliably.
    * Do not reverse this order‼️
    */
-  const workspace = reactive<Workspace>(
-    createDetectChangesProxy(
-      {
-        ...workspaceProps?.meta,
-        documents: {},
-        /**
-         * Returns the currently active document from the workspace.
-         * The active document is determined by the 'x-scalar-active-document' metadata field,
-         * falling back to the first document in the workspace if no active document is specified.
-         *
-         * @returns The active document or undefined if no document is found
-         */
-        get activeDocument(): NonNullable<Workspace['activeDocument']> | undefined {
-          return workspace.documents[getActiveDocumentName()]
-        },
-      },
-      {
-        hooks: {
-          onAfterChange(path) {
-            const type = path[0]
-
-            /** Document changes */
-            if (type === 'documents') {
-              // We are overriding the while documents object, ignore. This should not happen
-              if (path.length < 2) {
-                console.log('[WARN]: Overriding entire documents object is not supported')
-                return
-              }
-
-              const documentName = path[1] as string
-              const event = {
-                type: 'documents',
-                documentName,
-                value: unpackProxyObject(
-                  workspace.documents[documentName] ?? {
-                    openapi: '3.1.0',
-                    info: { title: '', version: '' },
-                    'x-scalar-original-document-hash': '',
-                  },
-                ),
-              } satisfies WorkspaceStateChangeEvent
-
-              fireWorkspaceChange(event)
-              return
-            }
-
-            /** Active document changes */
-            if (type === 'activeDocument') {
-              const documentName = getActiveDocumentName()
-              // Active document changed
-              const event = {
-                type: 'documents',
-                documentName,
-                value: unpackProxyObject(
-                  workspace.documents[documentName] ?? {
-                    openapi: '3.1.0',
-                    info: { title: '', version: '' },
-                    'x-scalar-original-document-hash': '',
-                  },
-                ),
-              } satisfies WorkspaceStateChangeEvent
-
-              fireWorkspaceChange(event)
-              return
-            }
-
-            /** Document meta changes */
-            const { activeDocument: _a, documents: _d, ...meta } = workspace
-            const event = {
-              type: 'meta',
-              value: unpackProxyObject(meta),
-            } satisfies WorkspaceStateChangeEvent
-
-            fireWorkspaceChange(event)
-            return
-          },
-        },
-      },
-    ),
-  )
+  const workspace = {
+    ...workspaceProps?.meta,
+    documents: {},
+    /**
+     * Returns the currently active document from the workspace.
+     * The active document is determined by the 'x-scalar-active-document' metadata field,
+     * falling back to the first document in the workspace if no active document is specified.
+     *
+     * @returns The active document or undefined if no document is found
+     */
+    get activeDocument(): NonNullable<Workspace['activeDocument']> | undefined {
+      return workspace.documents[getActiveDocumentName() as keyof typeof workspace.documents]
+    },
+  }
 
   /**
    * An object containing all the workspace state, wrapped in a detect changes proxy.
@@ -541,100 +469,46 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
    * Every change to the workspace state (documents, configs, metadata, etc.) can be detected here,
    * allowing for change tracking.
    */
-  const { originalDocuments, intermediateDocuments, overrides, documentConfigs } = createDetectChangesProxy(
-    {
-      /**
-       * Holds the original, unmodified documents as they were initially loaded into the workspace.
-       * These documents are stored in their raw form—prior to any reactive wrapping, dereferencing, or bundling.
-       * This map preserves the pristine structure of each document, using deep clones to ensure that
-       * subsequent mutations in the workspace do not affect the originals.
-       * The originals are retained so that we can restore, compare, or sync with the remote registry as needed.
-       */
-      originalDocuments: {} as Record<string, UnknownObject>,
-      /**
-       * Stores the intermediate state of documents after local edits but before syncing with the remote registry.
-       *
-       * This map acts as a local "saved" version of the document, reflecting the user's changes after they hit "save".
-       * The `originalDocuments` map, by contrast, always mirrors the document as it exists in the remote registry.
-       *
-       * Use this map to stage local changes that are ready to be propagated back to the remote registry.
-       * This separation allows us to distinguish between:
-       *   - The last known remote version (`originalDocuments`)
-       *   - The latest locally saved version (`intermediateDocuments`)
-       *   - The current in-memory (possibly unsaved) workspace document (`workspace.documents`)
-       */
-      intermediateDocuments: {} as Record<string, UnknownObject>,
-      /**
-       * A map of document configurations keyed by document name.
-       * This stores the configuration options for each document in the workspace,
-       * allowing for document-specific settings like navigation options, appearance,
-       * and other reference configuration.
-       */
-      documentConfigs: {} as Record<string, Config>,
-      /**
-       * Stores per-document overrides for OpenAPI documents.
-       * This object is used to override specific fields of a document
-       * when you cannot (or should not) modify the source document directly.
-       * For example, this enables UI-driven or temporary changes to be applied
-       * on top of the original document, without mutating the source.
-       * The key is the document name, and the value is a deep partial
-       * OpenAPI document representing the overridden fields.
-       */
-      overrides: {} as InMemoryWorkspace['overrides'],
-    },
-    {
-      hooks: {
-        onAfterChange(path) {
-          const type = path[0]
-
-          if (!type) {
-            return
-          }
-
-          if (path.length < 2) {
-            return
-          }
-
-          const documentName = path[1] as string
-          if (type === 'originalDocuments') {
-            const event = {
-              type,
-              documentName: documentName,
-              value: unpackProxyObject(originalDocuments[documentName] ?? {}),
-            } satisfies WorkspaceStateChangeEvent
-            fireWorkspaceChange(event)
-          }
-
-          if (type === 'intermediateDocuments') {
-            const event = {
-              type,
-              documentName: documentName,
-              value: unpackProxyObject(intermediateDocuments[documentName] ?? {}),
-            } satisfies WorkspaceStateChangeEvent
-            fireWorkspaceChange(event)
-          }
-
-          if (type === 'documentConfigs') {
-            const event = {
-              type,
-              documentName: documentName,
-              value: unpackProxyObject(documentConfigs[documentName] ?? {}),
-            } satisfies WorkspaceStateChangeEvent
-            fireWorkspaceChange(event)
-          }
-
-          if (type === 'overrides') {
-            const event = {
-              type,
-              documentName: documentName,
-              value: unpackProxyObject(overrides[documentName] ?? {}),
-            } satisfies WorkspaceStateChangeEvent
-            fireWorkspaceChange(event)
-          }
-        },
-      },
-    },
-  )
+  const { originalDocuments, intermediateDocuments, overrides, documentConfigs } = {
+    /**
+     * Holds the original, unmodified documents as they were initially loaded into the workspace.
+     * These documents are stored in their raw form—prior to any reactive wrapping, dereferencing, or bundling.
+     * This map preserves the pristine structure of each document, using deep clones to ensure that
+     * subsequent mutations in the workspace do not affect the originals.
+     * The originals are retained so that we can restore, compare, or sync with the remote registry as needed.
+     */
+    originalDocuments: {} as Record<string, UnknownObject>,
+    /**
+     * Stores the intermediate state of documents after local edits but before syncing with the remote registry.
+     *
+     * This map acts as a local "saved" version of the document, reflecting the user's changes after they hit "save".
+     * The `originalDocuments` map, by contrast, always mirrors the document as it exists in the remote registry.
+     *
+     * Use this map to stage local changes that are ready to be propagated back to the remote registry.
+     * This separation allows us to distinguish between:
+     *   - The last known remote version (`originalDocuments`)
+     *   - The latest locally saved version (`intermediateDocuments`)
+     *   - The current in-memory (possibly unsaved) workspace document (`workspace.documents`)
+     */
+    intermediateDocuments: {} as Record<string, UnknownObject>,
+    /**
+     * A map of document configurations keyed by document name.
+     * This stores the configuration options for each document in the workspace,
+     * allowing for document-specific settings like navigation options, appearance,
+     * and other reference configuration.
+     */
+    documentConfigs: {} as Record<string, Config>,
+    /**
+     * Stores per-document overrides for OpenAPI documents.
+     * This object is used to override specific fields of a document
+     * when you cannot (or should not) modify the source document directly.
+     * For example, this enables UI-driven or temporary changes to be applied
+     * on top of the original document, without mutating the source.
+     * The key is the document name, and the value is a deep partial
+     * OpenAPI document representing the overridden fields.
+     */
+    overrides: {} as InMemoryWorkspace['overrides'],
+  }
 
   /**
    * Returns the name of the currently active document in the workspace.
@@ -668,7 +542,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
   // which may include edits not yet synced to the remote registry.
   async function saveDocument(documentName: string) {
     const intermediateDocument = intermediateDocuments[documentName]
-    const workspaceDocument = workspace.documents[documentName]
+    const workspaceDocument = workspace.documents[documentName as keyof typeof workspace.documents]
 
     if (!workspaceDocument) {
       return
@@ -810,9 +684,8 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
     // Create a proxied document with magic proxy and apply any overrides, then store it in the workspace documents map
     // We create a new proxy here in order to hide internal properties after validation and processing
     // This ensures that the workspace document only exposes the intended OpenAPI properties and extensions
-    workspace.documents[name] = createOverridesProxy(createMagicProxy(getRaw(strictDocument)) as OpenApiDocument, {
-      overrides: overrides[name],
-    })
+    // @ts-expect-error - we know that the document is a valid OpenApiDocument
+    workspace.documents[name] = createMagicProxy(getRaw(strictDocument)) as OpenApiDocument
   }
 
   // Asynchronously adds a new document to the workspace by loading and validating the input.
@@ -830,6 +703,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       if (!resolve.ok) {
         console.error(`Failed to fetch document '${name}': request was not successful`)
 
+        // @ts-expect-error - we know that the document is a valid OpenApiDocument
         workspace.documents[name] = {
           ...meta,
           openapi: '3.1.0',
@@ -846,6 +720,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       if (!isObject(resolve.data)) {
         console.error(`Failed to load document '${name}': response data is not a valid object`)
 
+        // @ts-expect-error - we know that the document is a valid OpenApiDocument
         workspace.documents[name] = {
           ...meta,
           openapi: '3.1.0',
@@ -897,6 +772,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       key: K,
       value: WorkspaceDocumentMeta[K],
     ) {
+      // @ts-expect-error - we know that the document is a valid OpenApiDocument
       const currentDocument = workspace.documents[name === 'active' ? getActiveDocumentName() : name]
 
       if (!currentDocument) {
@@ -906,6 +782,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       Object.assign(currentDocument, { [key]: value })
     },
     async replaceDocument(documentName: string, input: Record<string, unknown>) {
+      // @ts-expect-error - we know that the document is a valid OpenApiDocument
       const currentDocument = workspace.documents[documentName]
 
       if (!currentDocument) {
@@ -956,6 +833,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
     exportActiveDocument: (format, minify) => exportDocument(getActiveDocumentName(), format, minify),
     saveDocument,
     async revertDocumentChanges(documentName: string) {
+      // @ts-expect-error - we know that the document is a valid OpenApiDocument
       const workspaceDocument = workspace.documents[documentName]
       const intermediate = intermediateDocuments[documentName]
 
@@ -975,15 +853,17 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       // TODO: Implement commit logic
       console.warn(`Commit operation for document '${documentName}' is not implemented yet.`)
     },
+    // @ts-expect-error - we know that the document is a valid OpenApiDocument
     exportWorkspace() {
       return {
+        // @ts-expect-error - we know that the document is a valid OpenApiDocument
         documents: {
           ...Object.fromEntries(
             Object.entries(workspace.documents).map(([name, doc]) => [
               name,
               // Extract the raw document data for export, removing any Vue reactivity wrappers.
               // When importing, the document can be wrapped again in a magic proxy.
-              toRaw(getRaw(unpackOverridesProxy(doc))),
+              toRaw(getRaw(doc)),
             ]),
           ),
         },
@@ -1000,14 +880,7 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       // Assign the magic proxy to the documents
       safeAssign(
         workspace.documents,
-        Object.fromEntries(
-          Object.entries(result.documents).map(([name, doc]) => [
-            name,
-            createOverridesProxy(createMagicProxy(doc), {
-              overrides: result.overrides[name],
-            }),
-          ]),
-        ),
+        Object.fromEntries(Object.entries(result.documents).map(([name, doc]) => [name, createMagicProxy(doc)])),
       )
 
       safeAssign(originalDocuments, result.originalDocuments)
@@ -1036,9 +909,8 @@ export const createWorkspaceStore = (workspaceProps?: WorkspaceProps): Workspace
       const originalDocument = originalDocuments[name]
       const intermediateDocument = intermediateDocuments[name]
       // raw version without any proxies
-      const activeDocument = workspace.documents[name]
-        ? toRaw(getRaw(unpackOverridesProxy(workspace.documents[name])))
-        : undefined
+      // @ts-expect-error - we know that the document is a valid OpenApiDocument
+      const activeDocument = workspace.documents[name] ? toRaw(getRaw(workspace.documents[name])) : undefined
 
       if (!originalDocument || !intermediateDocument || !activeDocument) {
         // If any required document state is missing, do nothing

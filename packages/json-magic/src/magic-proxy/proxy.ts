@@ -62,7 +62,7 @@ export const createMagicProxy = <T extends Record<keyof T & symbol, unknown>, S 
      *
      * It is helpful when dealing with reactive frameworks like Vue,
      */
-    proxyCache: WeakMap<object, T>
+    proxyCache: Map<object, T>
     /**
      * Cache to store resolved JSON references.
      */
@@ -79,7 +79,7 @@ export const createMagicProxy = <T extends Record<keyof T & symbol, unknown>, S 
     currentContext: string
   } = {
     root: target,
-    proxyCache: new WeakMap(),
+    proxyCache: new Map(),
     cache: new Map(),
     schemas: getSchemas(target),
     currentContext: '',
@@ -93,6 +93,7 @@ export const createMagicProxy = <T extends Record<keyof T & symbol, unknown>, S 
   if (args.proxyCache.has(target)) {
     return args.proxyCache.get(target)
   }
+  console.log('create magic proxy', args.proxyCache.size)
 
   const handler: ProxyHandler<T> = {
     /**
