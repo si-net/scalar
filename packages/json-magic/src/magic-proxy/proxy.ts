@@ -93,7 +93,7 @@ export const createMagicProxy = <T extends Record<keyof T & symbol, unknown>, S 
   if (args.proxyCache.has(target)) {
     return args.proxyCache.get(target)
   }
-  console.log('create magic proxy', args.proxyCache.size)
+  console.log('create magic proxy', args.proxyCache.size, target)
 
   const handler: ProxyHandler<T> = {
     /**
@@ -151,9 +151,29 @@ export const createMagicProxy = <T extends Record<keyof T & symbol, unknown>, S 
         return proxiedValue
       }
 
-      // For all other properties, recursively wrap the value in a magic proxy
+      // For all other properties, get the value and wrap it if needed
       const value = Reflect.get(target, prop, receiver)
-      return createMagicProxy(value as T, options, { ...args, currentContext: id ?? args.currentContext })
+
+      // Only proxy objects and arrays - primitives can be returned as-is
+      if (!isObject(value) && !Array.isArray(value)) {
+        return value
+      }
+
+      // If the value is already a magic proxy, return it directly
+      if (typeof value === 'object' && value !== null && (value as Record<symbol, unknown>)[isMagicProxy]) {
+        return value
+      }
+
+      // Check if we already have a proxy for this object to avoid recreating it
+      if (args.proxyCache.has(value)) {
+        return args.proxyCache.get(value)
+      }
+
+      // Create a new proxy with the updated context
+      return createMagicProxy(value as T, options, {
+        ...args,
+        currentContext: id ?? args.currentContext,
+      })
     },
     /**
      * Proxy "set" trap for magic proxy.
