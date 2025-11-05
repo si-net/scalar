@@ -1,5 +1,14 @@
 # @scalar/nuxt
 
+## 0.5.24
+
+### Patch Changes
+
+- Updated dependencies [[`2377b76`](https://github.com/scalar/scalar/commit/2377b76d050f8de70037b17a32d0dd1181d3311d)]:
+  - @scalar/api-reference@1.39.2
+  - @scalar/api-client@2.9.2
+  - @scalar/workspace-store@0.18.2
+
 ## 0.5.23
 
 ### Patch Changes

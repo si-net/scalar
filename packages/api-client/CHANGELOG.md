@@ -1,5 +1,24 @@
 # @scalar/api-client
 
+## 2.9.2
+
+### Patch Changes
+
+- [#7241](https://github.com/scalar/scalar/pull/7241) [`2377b76`](https://github.com/scalar/scalar/commit/2377b76d050f8de70037b17a32d0dd1181d3311d) Thanks [@hanspagel](https://github.com/hanspagel)! - chore: use "current" not "latest" scalar registry url
+
+- Updated dependencies [[`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`2377b76`](https://github.com/scalar/scalar/commit/2377b76d050f8de70037b17a32d0dd1181d3311d)]:
+  - @scalar/json-magic@0.8.0
+  - @scalar/openapi-parser@0.23.1
+  - @scalar/helpers@0.1.0
+  - @scalar/oas-utils@0.6.2
+  - @scalar/workspace-store@0.18.2
+  - @scalar/import@0.4.33
+  - @scalar/components@0.16.2
+  - @scalar/object-utils@1.2.10
+  - @scalar/postman-to-openapi@0.3.43
+  - @scalar/sidebar@0.2.2
+  - @scalar/use-codemirror@0.12.46
+
 ## 2.9.1
 
 ### Patch Changes

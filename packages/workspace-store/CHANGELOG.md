@@ -1,5 +1,13 @@
 # @scalar/workspace-store
 
+## 0.18.2
+
+### Patch Changes
+
+- Updated dependencies [[`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66)]:
+  - @scalar/json-magic@0.8.0
+  - @scalar/helpers@0.1.0
+
 ## 0.18.1
 
 ### Patch Changes

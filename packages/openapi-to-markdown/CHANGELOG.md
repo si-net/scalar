@@ -1,5 +1,15 @@
 # @scalar/openapi-to-markdown
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [[`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`c1ecd0c`](https://github.com/scalar/scalar/commit/c1ecd0c6096f3fbe2e3d8ad3794ea718bb6bce66), [`2377b76`](https://github.com/scalar/scalar/commit/2377b76d050f8de70037b17a32d0dd1181d3311d)]:
+  - @scalar/openapi-parser@0.23.1
+  - @scalar/helpers@0.1.0
+  - @scalar/oas-utils@0.6.2
+  - @scalar/components@0.16.2
+
 ## 0.3.1
 
 ### Patch Changes
